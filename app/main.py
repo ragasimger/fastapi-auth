@@ -1,59 +1,97 @@
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from base.camelize import CamelAPIResponse, CamelCaseRequestMiddleware, to_camel
-from base.openapi_config import SWAGGER_UI_PARAMETERS
-from base.response import setup_exception_handlers
-
-app = FastAPI()
-
-
-app = FastAPI(
-    title="FastAPI Authentication and Authorization",
-    swagger_ui_parameters=SWAGGER_UI_PARAMETERS,
-    default_response_class=CamelAPIResponse,
-    version="0.1.0",
+from app.api.docs import include_docs_routers
+from app.api.routers import api_router_v1, api_router_v2
+from app.core.configs import SWAGGER_UI_PARAMETERS, init_logging, settings
+from app.core.exception_handlers import (
+    StarletteHTTPException,
+    app_exception_handler,
+    generic_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
+from app.core.exceptions import APIException
+from base.camelize import (
+    CamelCaseRequestMiddleware,
+    camelize_openapi_schema,
 )
 
 
-def camel_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logging.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    yield
+    logging.info("Shutting down application")
 
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
+
+def create_application() -> FastAPI:
+    app = FastAPI(
+        debug=settings.DEBUG,
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
+        docs_url=f"{settings.API_V1_PREFIX}/docs",
+        redoc_url=f"{settings.API_V1_PREFIX}/redoc",
+        swagger_ui_parameters=SWAGGER_UI_PARAMETERS,
+        lifespan=lifespan,
     )
+    # Cors
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    # camelcase middleware
+    app.add_middleware(CamelCaseRequestMiddleware)
 
-    components = schema.get("components", {}).get("schemas", {})
-    for name, defs in components.items():
-        if "properties" in defs:
-            defs["properties"] = {to_camel(k): v for k, v in defs["properties"].items()}
-        if "required" in defs:
-            defs["required"] = [to_camel(r) for r in defs["required"]]
+    # exception handlers
+    app.add_exception_handler(Exception, generic_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(APIException, app_exception_handler)
 
-    app.openapi_schema = schema
-    return schema
+    # Routes
+    app.include_router(api_router_v1, prefix=settings.API_V1_PREFIX)
+    app.include_router(api_router_v2, prefix=settings.API_V2_PREFIX)
 
-
-app.openapi = camel_openapi
-app.add_middleware(CamelCaseRequestMiddleware)
-setup_exception_handlers(app)
+    return app
 
 
-@app.get("/health", tags=["Health"])
-async def health_check():
-    return {"status": "ok"}
+init_logging()
+logger = logging.getLogger(__name__)
+app = create_application()
+include_docs_routers(app)
 
 
 @app.get("/", include_in_schema=False)
-def main():
-    return {"message": "Hello World"}
+async def home():
+    return {
+        "message": f"Welcome to the {settings.APP_NAME} API!",
+        "docs": [
+            {
+                "version": "v1",
+                "SwaggerURL": f"{settings.API_V1_PREFIX}/docs",
+                "RedocURL": f"{settings.API_V1_PREFIX}/redoc",
+            },
+            {
+                "version": "v2",
+                "SwaggerURL": f"{settings.API_V2_PREFIX}/docs",
+                "RedocURL": f"{settings.API_V2_PREFIX}/redoc",
+            },
+        ],
+    }
 
 
-# if __name__ == "__main__":
-#     import uvicorn
-
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/health", tags=["System-Health"], include_in_schema=True)
+async def health_check() -> dict[str, str]:
+    """Health check endpoint for load balancers."""
+    return {"status": "healthy"}
