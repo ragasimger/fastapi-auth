@@ -70,8 +70,8 @@ def _log_context(request: Request) -> dict:
 async def app_exception_handler(request: Request, exc: APIException) -> APIResponse:
     status_code = EXCEPTION_STATUS_MAP.get(type(exc), exc.status_code)
 
-    logger.warning(
-        f"APIException: {exc.__class__.__name__}: {exc.message}",
+    logger.exception(
+        f"<< !-- APIException: {exc.__class__.__name__}: {exc.message} -- >>",
         extra={
             **_log_context(request),
             "error_code": getattr(exc, "error_code", exc.__class__.__name__),
