@@ -162,11 +162,10 @@ LOGGING_CONFIGS = {
 }
 
 
-def setup_logging():
+def init_logging():
     logging.config.dictConfig(LOGGING_CONFIGS)
 
 
-# Convenience export
 settings = get_settings()
 
 SWAGGER_UI_PARAMETERS = get_swagger_settings()
