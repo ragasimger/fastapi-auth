@@ -4,14 +4,14 @@ from typing import Annotated, AsyncGenerator
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from .config import ATOMIC, DB_URI, DEBUG
+from base.configs import settings
 
 # DEBUGGING = True
 DEBUGGING = False
 
 
 engine = create_async_engine(
-    DB_URI,
+    settings.DATABASE_URL,
     echo=DEBUGGING,
     future=True,
     pool_size=20,
@@ -54,7 +54,7 @@ AtomicSessionDependency = Annotated[AsyncSession, Depends(get_atomic_session)]
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 
-if ATOMIC:
+if settings.ATOMIC:
     SessionDep = SessionDependency
 else:
     SessionDep = AtomicSessionDependency
