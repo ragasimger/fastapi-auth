@@ -52,6 +52,11 @@ class AbstractBaseModel(DeclarativeBaseModel):
         nullable=False,
         index=True,
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
 
     @declared_attr
     def created_by_id(cls) -> Mapped[Optional[str]]:

@@ -19,3 +19,7 @@ static/*
 
 
 *.json
+
+logs/*
+logs/*.json
+*.log
