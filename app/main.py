@@ -8,20 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.docs import include_docs_routers
-from app.api.routers import api_router_v1, api_router_v2
-from app.core.configs import SWAGGER_UI_PARAMETERS, init_logging, settings
-from app.core.exception_handlers import (
+
+# Base imports
+from base.apis.routers import api_router_v1, api_router_v2
+from base.camelize import CamelCaseRequestMiddleware
+from base.configs import SWAGGER_UI_PARAMETERS, init_logging, settings
+from base.exception_handlers import (
     StarletteHTTPException,
     app_exception_handler,
     generic_exception_handler,
     http_exception_handler,
     validation_exception_handler,
 )
-from app.core.exceptions import APIException
-from base.camelize import (
-    CamelCaseRequestMiddleware,
-    camelize_openapi_schema,
-)
+from base.exceptions import APIException
 
 
 @asynccontextmanager
