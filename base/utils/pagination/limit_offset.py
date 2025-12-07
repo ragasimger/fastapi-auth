@@ -27,6 +27,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     Used for both page-based and offset-based pagination.
     """
 
+    message: Optional[str] = Field(None, description="Response message")
     count: int = Field(description="Total number of items")
     next: Optional[str] = Field(None, description="URL to next page")
     previous: Optional[str] = Field(None, description="URL to previous page")
