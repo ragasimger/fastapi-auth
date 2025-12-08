@@ -30,36 +30,54 @@ class UserServiceRepository(SQLAlchemyBaseRepository[User]):
     def __init__(self, session: AsyncSession):
         super().__init__(User, session)
 
+    async def _check_username_email_exists(
+        self,
+        username: str = "",
+        email: str = "",
+    ) -> bool:
+        if not username and not email:
+            return False
+
+        if username and not email:
+            sql_stmt = select(User).where(User.username == username)
+        elif email and not username:
+            sql_stmt = select(User).where(User.email == email)
+        else:
+            sql_stmt = select(User).where(
+                or_(
+                    User.username == username,
+                    User.email == email,
+                )
+            )
+
+        user_result = await self.session.execute(sql_stmt)
+        existing_user = user_result.scalars().first()
+
+        logger.info(
+            f"Checking if user exists with username: {username} or email: {email}, {existing_user}"
+        )
+        if not existing_user:
+            return False
+        error_detail: dict[str, str] = {}
+        logger.error(
+            f"User with given email ({email}) or username({username}) already exists."
+        )
+        if existing_user.email == email:
+            error_detail["email"] = "User already exists with this email."
+            logger.error(f"User with this email already exists: {email}")
+        if existing_user.username == username:
+            logger.error(f"User with this username already exists: {username}")
+            error_detail["username"] = "User already exists with this username."
+        raise ValidationError(errors=error_detail)
+
     async def create(self, user: UserCreateRequest) -> UserCreateResponse:
         logger.info(f"Creating user with email: {user.email}")
+        logger.info("Checking for duplicate username, and email for user")
 
-        sql_stmt = select(User).filter(
-            or_(
-                User.username == user.username,
-                User.email == user.email,
-            )
+        await self._check_username_email_exists(
+            username=user.username,
+            email=user.email,
         )
-        user_result = await self.session.execute(sql_stmt)
-        existing_user = user_result.scalar_one_or_none()
-        if existing_user:
-            logger.error(
-                f"User with given email ({user.email}) or username({user.username}) already exists."
-            )
-            error_detail: dict[str, str] = {}
-            if existing_user.email == user.email:
-                error_detail["email"] = "User already exists with this email."
-            if existing_user.username == user.username:
-                error_detail["username"] = "User already exists with this username."
-
-            # raise ValidationException(
-            #     # status_code=status.HTTP_400_BAD_REQUEST,
-            #     message="User with given email or username already exists.",
-            #     errors=error_detail,
-            # )
-            raise ValidationError(
-                # message="User with given email or username already exists.",
-                errors=error_detail,
-            )
 
         user_data = user.model_dump(exclude_unset=True)
         role_ids = user_data.pop("role_ids", [])
@@ -112,48 +130,13 @@ class UserServiceRepository(SQLAlchemyBaseRepository[User]):
         user_update: user_schemas.UserUpdateRequest,
     ) -> user_schemas.UserUpdateResponse:
         # checking if username duplicates
+        logger.info(f"Updating user with ID: {user_id}")
         logger.info(f"Checking for duplicate username, and email for user ID {user_id}")
-
-        sql_stmt = select(User).filter(
-            or_(
-                User.username == user_update.username,
-                User.email == user_update.email,
-            ),
-            self.model.id != user_id,
+        # check existing user with same username or email
+        await self._check_username_email_exists(
+            username=user_update.username or "",
+            email=user_update.email or "",
         )
-        user_result = await self.session.execute(sql_stmt)
-        existing_user = user_result.scalar_one_or_none()
-        if existing_user:
-            error_detail: dict[str, str] = {}
-            if existing_user.email == user_update.email:
-                error_detail["email"] = "User already exists with this email."
-                logger.error(f"User with email {user_update.email} already exists.")
-            if existing_user.username == user_update.username:
-                error_detail["username"] = "User already exists with this username."
-                logger.error(
-                    f"User with username {user_update.username} already exists."
-                )
-            raise ValidationError(
-                errors=error_detail,
-            )
-
-        # stmt = (
-        #     select(self.model)
-        #     .options(
-        #         selectinload(self.model.roles), selectinload(self.model.permissions)
-        #     )
-        #     .where(self.model.id == user_id)
-        # )
-
-        # stmt = select(self.model).where(self.model.id == user_id)
-
-        # if user_update.role_ids is not None or not user_update.role_ids == []:
-        #     stmt = stmt.options(selectinload(self.model.roles))
-        # if (
-        #     user_update.permission_ids is not None
-        #     or not user_update.permission_ids == []
-        # ):
-        #     stmt = stmt.options(selectinload(self.model.permissions))
         user = await self.get(
             id=user_id,
             load_options=[
